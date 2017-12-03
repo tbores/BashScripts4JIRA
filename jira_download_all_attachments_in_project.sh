@@ -22,7 +22,7 @@ function usage {
     echo "  <project-key>     JIRA project key"
     echo "  <jira_url>        JIRA URL"
     echo ""
-    echo "Example: $0 -e tbores thisIsNotMyPassword TEMPONE"
+    echo "Example: $0 'tbores' 'thisIsNotMyPassword' 'TEMPONE' 'https://jira.myserver.de:8443'"
     echo "Quit with return code 1"
     exit 1
 }
