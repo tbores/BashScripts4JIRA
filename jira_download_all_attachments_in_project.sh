@@ -116,7 +116,7 @@ while [ $issue_index -lt $n_issues ];do
 
     echo "Number of attachments: "$n_attachements
 
-    while [ $attachment_index -lt $n_attachements ]; do
+    while [ $attachment_index -lt $n_attachements ];do
             attachment_id=$(jq ".fields.attachment[$attachment_index].id" issue.json)
             attachment_id="${attachment_id:1}"
             attachment_id="${attachment_id:0:-1}"
@@ -126,28 +126,48 @@ while [ $issue_index -lt $n_issues ];do
             attachment_filename="${attachment_filename:0:-1}"
 
             # Handle specific case with attachments that have same filename
-            if [ -e $attachment_filename ];then
-                output_filename="$attachment_filename.1"
+            output_filename=$attachment_filename
+            dl_index=1
+            while [ -e "$output_filename" ];do
+                output_filename="$attachment_filename.${dl_index}"
                 echo "WARN: Attachment with $attachment_filename already exists. Rename it $output_filename"
-            else
-                output_filename=$attachment_filename
-            fi
+                ((dl_index++))
+            done
 
             if [ "$attachment_id" == "null" ]
             then
                 echo "Url is empty"
             else
-                echo "Attachment complete URL: $JIRA_URL/secure/attachment/$attachment_id/$attachment_filename"
-                return_code=$(curl -s -G -o "$output_filename" -w "%{http_code}" -u $JIRA_USERNAME:$JIRA_PASSWORD -H 'Content-Type:application/json' -X GET "$JIRA_URL/secure/attachment/$attachment_id/" --data-urlencode "$attachment_filename")
+                try=0
+                # Sometime the JIRA server seems to be overloaded with the requests
+                # and curl returns HTTP_RETURN_CODE 000
+                # in that case we do 2 retries with pauses
+                # First pause: 5s
+                # Second pause: 10s
+                while (($try < 3));do
 
-                if (($return_code != 200))
-                then
-                    echo "ERROR: HTTP_RETURN_CODE: $return_code. Cannot download attachment $attachment_filename for issue $issue_key"
-                    echo "HTTP_RETURN_CODE: $return_code. Cannot download attachment $attachment_filename for issue $issue_key" >> ../../LOG_download_failed.txt
-                else
-                    echo "INFO: Attachment $attachment_filename for issue $issue_key downloaded."
-                    echo "Attachment $attachment_filename for issue $issue_key downloaded." >> ../../LOG_download_success.txt
-                fi
+                    echo "Attachment complete URL: $JIRA_URL/secure/attachment/$attachment_id/$attachment_filename"
+                    return_code=$(curl -s -G -o "$output_filename" -w "%{http_code}" -u $JIRA_USERNAME:$JIRA_PASSWORD -H 'Content-Type:application/json' -X GET "$JIRA_URL/secure/attachment/$attachment_id/" --data-urlencode "$attachment_filename")
+
+                    if (($return_code == 200))
+                    then
+                        echo "INFO: Attachment $attachment_filename for issue $issue_key downloaded."
+                        echo "Attachment $attachment_filename for issue $issue_key downloaded." >> ../../LOG_download_success.txt
+                        break
+                    elif (($return_code == 0));then
+                        ((try++))
+                        echo "WARN: $try try failed. Retry!"
+                    else
+                        try=3
+                    fi
+
+                    if (($try == 3));then
+                        echo "ERROR: HTTP_RETURN_CODE: $return_code. Cannot download attachment $attachment_filename for issue $issue_key"
+                        echo "HTTP_RETURN_CODE: $return_code. Cannot download attachment $attachment_filename for issue $issue_key" >> ../../LOG_download_failed.txt
+                    else
+                        sleep $(($try*5))
+                    fi
+                done
             fi
             ((attachment_index++))
     done
